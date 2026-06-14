@@ -1993,8 +1993,8 @@ window.saveSetting = async (type) => {
 
 window.shareMonthSummary = () => {
   const mp = getMonthPayments();
-  const paidMembers = state.members.filter(m => mp[m.id]);
-  const pendingMembers = state.members.filter(m => !mp[m.id]);
+  const paidMembers = state.members.filter(m => !m.disabled && mp[m.id]);
+  const pendingMembers = state.members.filter(m => !m.disabled && !mp[m.id]);
   const monthKey = getMonthKey();
   const [yr, mo] = monthKey.split('-');
   const monthName = `${TAMIL_MONTHS[parseInt(mo)-1]} ${yr}`;
@@ -2030,7 +2030,7 @@ window.sharePaidList = () => {
 
 window.sharePendingReminder = () => {
   const mp = getMonthPayments();
-  const pendingMembers = state.members.filter(m => !mp[m.id]);
+  const pendingMembers = state.members.filter(m => !m.disabled && !mp[m.id]);
   const monthKey = getMonthKey();
   const [yr, mo] = monthKey.split('-');
   const monthName = `${TAMIL_MONTHS[parseInt(mo)-1]} ${yr}`;
