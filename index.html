@@ -743,6 +743,10 @@
   }
   .empty-state .icon { font-size: 40px; margin-bottom: 10px; }
   .empty-state p { font-family: 'Noto Sans Tamil', sans-serif; font-size: 14px; }
+  .member-admin-card.disabled-card { opacity: 0.45; background: #f3f4f6; }
+  .disabled-badge { font-size: 10px; background: #e5e7eb; color: #6b7280; padding: 2px 7px; border-radius: 10px; font-weight: 700; margin-left: 6px; font-family: 'Noto Sans Tamil', sans-serif; }
+  .icon-btn.disable-icon { background: #fef3c7; color: #92400e; }
+  .icon-btn.disable-icon.active { background: #dcfce7; color: #14532d; }
 
   /* LOGIN */
   #login-screen {
@@ -1511,8 +1515,9 @@ function updateMonthDisplays() {
 
 function updateHeaderStats() {
   const mp = getMonthPayments();
-  const paid = Object.keys(mp).length;
-  const total = state.members.length;
+  const activeMembers = state.members.filter(m => !m.disabled);
+  const paid = activeMembers.filter(m => mp[m.id]).length;
+  const total = activeMembers.length;
   const pending = total - paid;
   const collected = paid * state.settings.amount;
   document.getElementById('h-paid').textContent = `${paid}/${total}`;
@@ -1550,8 +1555,9 @@ function updateCountdown() {
 
 function renderDashboard() {
   const mp = getMonthPayments();
-  const paid = Object.keys(mp).length;
-  const total = state.members.length;
+  const activeMembers = state.members.filter(m => !m.disabled);
+  const paid = activeMembers.filter(m => mp[m.id]).length;
+  const total = activeMembers.length;
   const collected = paid * state.settings.amount;
   const pendingAmt = (total - paid) * state.settings.amount;
   const pct = total > 0 ? Math.round(paid/total*100) : 0;
@@ -1565,7 +1571,7 @@ function renderDashboard() {
   const el = document.getElementById('dashboard-list');
   if (!state.members.length) { el.innerHTML = '<div class="loader"><p>உறுப்பினர்கள் இல்லை</p></div>'; return; }
 
-  el.innerHTML = state.members.map((m,i) => {
+  el.innerHTML = state.members.filter(m => !m.disabled).map((m,i) => {
     const paid = isPaid(m.id);
     const date = getPayDate(m.id);
     return `
@@ -1587,7 +1593,7 @@ function renderDashboard() {
 
 function renderPaid() {
   const mp = getMonthPayments();
-  const paidMembers = state.members.filter(m => mp[m.id]);
+  const paidMembers = state.members.filter(m => !m.disabled && mp[m.id]);
   document.getElementById('paid-count').textContent = paidMembers.length;
   const el = document.getElementById('paid-list');
   if (!paidMembers.length) {
@@ -1613,7 +1619,7 @@ function renderPaid() {
 
 function renderPending() {
   const mp = getMonthPayments();
-  const pendingMembers = state.members.filter(m => !mp[m.id]);
+  const pendingMembers = state.members.filter(m => !m.disabled && !mp[m.id]);
   document.getElementById('pending-count').textContent = pendingMembers.length;
   const el = document.getElementById('pending-list');
   if (!pendingMembers.length) {
@@ -1690,19 +1696,24 @@ function renderHistory() {
 
 function renderAdminMembers() {
   const el = document.getElementById('admin-member-list');
-  el.innerHTML = state.members.map((m,i) => `
-    <div class="member-admin-card">
+  el.innerHTML = state.members.map((m,i) => {
+    const isDisabled = !!m.disabled;
+    const disabledBtns = isDisabled ? 'disabled style="opacity:0.4;pointer-events:none;"' : '';
+    return `
+    <div class="member-admin-card${isDisabled ? ' disabled-card' : ''}">
       <div class="member-num">${i+1}</div>
       <div class="member-admin-info">
-        <div class="member-admin-name">${m.name}</div>
+        <div class="member-admin-name">${m.name}${isDisabled ? '<span class="disabled-badge">⏸ Paused</span>' : ''}</div>
         ${m.location ? `<div style="font-size:11px;color:var(--gray-600);">${m.location}</div>` : ''}
       </div>
       <div class="member-admin-actions">
-        <button class="icon-btn edit-icon" onclick="openEditMember('${m.id}')" title="திருத்து">✏️</button>
-        <button class="icon-btn delete-icon" onclick="deleteMember('${m.id}', '${m.name.replace(/'/g,"\\'")}'')" title="நீக்கு">🗑️</button>
-        <button class="icon-btn share-icon" onclick="shareMember('${m.id}')" title="Share">📲</button>
+        <button class="icon-btn edit-icon" onclick="openEditMember('${m.id}')" title="திருத்து" ${isDisabled ? 'disabled style="opacity:0.4;pointer-events:none;"' : ''}>✏️</button>
+        <button class="icon-btn delete-icon" onclick="deleteMember('${m.id}', '${m.name.replace(/'/g,"\\'")}'')" title="நீக்கு" ${isDisabled ? 'disabled style="opacity:0.4;pointer-events:none;"' : ''}>🗑️</button>
+        <button class="icon-btn share-icon" onclick="shareMember('${m.id}')" title="Share" ${isDisabled ? 'disabled style="opacity:0.4;pointer-events:none;"' : ''}>📲</button>
+        <button class="icon-btn ${isDisabled ? 'disable-icon active' : 'disable-icon'}" onclick="toggleDisableMember('${m.id}', ${isDisabled})" title="${isDisabled ? 'மறுபடியும் சேர்' : 'தற்காலிகமாக நிறுத்து'}">${isDisabled ? '▶️' : '⏸️'}</button>
       </div>
-    </div>`).join('');
+    </div>`;
+  }).join('');
 }
 
 function updateSettingsUI() {
@@ -1896,6 +1907,33 @@ window.saveMember = async (id) => {
   closeModalDirect();
 };
 
+window.toggleDisableMember = async (id, currentlyDisabled) => {
+  const m = state.members.find(x => x.id === id);
+  if (!m) return;
+  if (currentlyDisabled) {
+    // Re-enable
+    await update(ref(db, `members/${id}`), { disabled: false });
+    showToast('▶️ மறுபடியும் சேர்க்கப்பட்டது!');
+  } else {
+    // Disable - show confirmation
+    document.getElementById('modal-title').textContent = '⏸️ தற்காலிகமாக நிறுத்து';
+    document.getElementById('modal-body').innerHTML = `
+      <p style="font-family:'Noto Sans Tamil',sans-serif;font-size:14px;color:var(--gray-700);margin-bottom:16px;line-height:1.6;">
+        <strong>${m.name}</strong> - இந்த குடும்பத்தை தற்காலிகமாக நிறுத்த வேண்டுமா?<br/>
+        <span style="font-size:12px;color:#6b7280;">Stats-ல் காட்டாது, Delete ஆகாது</span>
+      </p>
+      <button class="modal-btn" style="background:linear-gradient(135deg,#92400e,#d97706)" onclick="confirmDisable('${id}')">⏸️ நிறுத்து</button>
+      <button class="modal-btn-cancel" onclick="closeModalDirect()">Cancel | ரத்து</button>`;
+    document.getElementById('modal-overlay').classList.add('open');
+  }
+};
+
+window.confirmDisable = async (id) => {
+  await update(ref(db, `members/${id}`), { disabled: true });
+  showToast('⏸️ தற்காலிகமாக நிறுத்தப்பட்டது');
+  closeModalDirect();
+};
+
 window.deleteMember = (id, name) => {
   document.getElementById('modal-title').textContent = '🗑️ நீக்கு';
   document.getElementById('modal-body').innerHTML = `
@@ -1962,7 +2000,7 @@ window.shareMonthSummary = () => {
   const monthName = `${TAMIL_MONTHS[parseInt(mo)-1]} ${yr}`;
 
   let msg = `🛕 *ஸ்ரீ வீரமாத்தி அம்மன் & ஸ்ரீ முனியப்பன் திருக்கோவில், சங்ககிரி*\n\n📊 *${monthName} - மாதாந்திர நிதி நிலை*\n\n`;
-  msg += `✅ *செலுத்தினர்: ${paidMembers.length}/${state.members.length}*\n`;
+  msg += `✅ *செலுத்தினர்: ${paidMembers.length}/${state.members.filter(m=>!m.disabled).length}*\n`;
   msg += `💰 *வசூல்: ₹${(paidMembers.length * state.settings.amount).toLocaleString('en-IN')}*\n`;
   msg += `⏳ *நிலுவை: ₹${(pendingMembers.length * state.settings.amount).toLocaleString('en-IN')}*\n\n`;
 
